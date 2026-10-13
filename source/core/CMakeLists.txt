@@ -23,7 +23,6 @@ target_compile_definitions(studio_core
         JUCE_PLUGINHOST_AU=1
         JUCE_PLUGINHOST_LADSPA=0
         JUCE_PLUGINHOST_LV2=0
-        JUCE_ASIO=0
         JUCE_JACK=0
         JUCE_MODAL_LOOPS_PERMITTED=1
         JUCE_UNIT_TESTS=1
@@ -65,6 +64,13 @@ if(UNIX AND NOT APPLE)
     else()
         target_compile_definitions(studio_core PUBLIC JUCE_USE_CURL=0)
     endif()
+endif()
+
+if(WIN32 AND STUDIO_ASIO_SDK_DIR)
+    target_compile_definitions(studio_core PUBLIC JUCE_ASIO=1)
+    target_include_directories(studio_core PRIVATE ${STUDIO_ASIO_SDK_DIR}/common)
+else()
+    target_compile_definitions(studio_core PUBLIC JUCE_ASIO=0)
 endif()
 
 if(MSVC)

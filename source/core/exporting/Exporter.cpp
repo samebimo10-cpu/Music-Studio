@@ -1,5 +1,6 @@
 #include "Exporter.h"
 #include "../engine/OfflineRenderer.h"
+#include "../mastering/MasteringChain.h"
 #include "../engine/ClipCache.h"
 #include "../midi/MidiTools.h"
 #include "../project/ProjectStore.h"
@@ -237,7 +238,7 @@ juce::Result renderLyricVideo (const Project& p, const juce::File& folder, const
 
     mp4.deleteFile();
     auto r = runTool ({ ffmpeg.getFullPathName(), "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", list.getFullPathName(),
-                        "-i", audioFile.getFullPathName(), "-vsync", "vfr", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "veryfast",
+                        "-i", audioFile.getFullPathName(), "-vf", "fps=30", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "veryfast",
                         "-tune", "stillimage", "-c:a", "aac", "-b:a", "256k", "-shortest", "-movflags", "+faststart", mp4.getFullPathName() });
     temp.deleteRecursively();
     return r;
@@ -253,6 +254,9 @@ Result exportAll (const Project& p, const juce::File& folder, const juce::File& 
     const double sr = o.sampleRate;
     auto report = [&] (float f, const juce::String& label) { return ! progress || progress (f, label); };
 
+    // Every master-chain render uses the same settings, fitted so the master lands on
+    // the loudness target (see step 1).
+    Project pm = p;
     auto render = [&] (std::function<bool (const Track&)> filter, bool master, bool click = false)
     {
         RenderRequest req;
@@ -262,7 +266,7 @@ Result exportAll (const Project& p, const juce::File& folder, const juce::File& 
         req.projectFolder = folder;
         req.includeClick = click;
         req.clickOnLeftOnly = click;
-        return OfflineRenderer::render (p, req);
+        return OfflineRenderer::render (pm, req);
     };
 
     auto isVocal = [&] (const Track& t)
@@ -280,8 +284,18 @@ Result exportAll (const Project& p, const juce::File& folder, const juce::File& 
     };
 
     // 1. Master
-    if (! report (0.02f, "Rendering the master")) return res;
-    auto master = render ({}, true);
+    if (! report (0.02f, "Rendering the mix")) return res;
+    juce::AudioBuffer<float> master;
+    if (o.applyMastering && p.mastering.enabled)
+    {
+        auto mix = render ({}, false);
+        if (mix.getNumSamples() == 0) { res.errors.add ("Nothing to export: the song is empty."); return res; }
+        if (! report (0.12f, "Mastering to " + juce::String (p.mastering.targetLufs, 1) + " LUFS")) return res;
+        pm.mastering = mastering::fitLoudness (mix, sr, p.mastering);
+        master = mastering::render (mix, sr, pm.mastering);
+    }
+    else
+        master = render ({}, false);
     if (master.getNumSamples() == 0) { res.errors.add ("Nothing to export: the song is empty."); return res; }
 
     // Trim the rendered tail to the last audible sample plus a short fade room.

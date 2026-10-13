@@ -85,6 +85,8 @@ public:
     const MeterValues& masterMeter() const noexcept { return masterMeters; }
     const LoudnessMeter& masterLoudness() const noexcept { return loudness; }
     LoudnessMeter& masterLoudness() noexcept { return loudness; }
+    /** Asks the audio thread to restart loudness measurement (thread-safe). */
+    void resetLoudness() noexcept { loudnessResetPending.store (true); }
 
     int getLatencySamples() const noexcept { return maxLatency; }
     double getSampleRate() const noexcept { return options.sampleRate; }
@@ -153,6 +155,7 @@ private:
         juce::AudioBuffer<float> buffer, preFader;
         MeterValues meters;
         bool feedsSoloed = false;
+        int silentSamples = 0;                   // input silent this long: effect tails have died out
 
         // Live note FIFO (UI/MIDI keyboard -> audio thread)
         struct LiveNote { int note; float velocity; bool on; };
@@ -178,6 +181,7 @@ private:
     MeterValues masterMeters;
     LoudnessMeter loudness;
     std::atomic<bool> chasePending { true };
+    std::atomic<bool> loudnessResetPending { false };
     int maxLatency = 0;
     juce::int64 lengthSamples = 0;
 };

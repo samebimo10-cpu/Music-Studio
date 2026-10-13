@@ -11,6 +11,7 @@ option(STUDIO_BUILD_CLI   "Build the studio-cli tool"       ON)
 option(STUDIO_BUILD_TESTS "Build the unit test runner"      ON)
 option(STUDIO_ENABLE_LTO  "Link-time optimisation (release builds)" OFF)
 set(STUDIO_JUCE_DIR "" CACHE PATH "Use a local JUCE checkout instead of downloading one")
+set(STUDIO_ASIO_SDK_DIR "" CACHE PATH "Windows: path to the Steinberg ASIO SDK (enables ASIO drivers for low-latency monitoring)")
 
 include(cmake/Dependencies.cmake)
 

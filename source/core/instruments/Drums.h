@@ -74,6 +74,7 @@ private:
         double freq = 55;
         std::array<double, 6> phases {};
         Svf f1, f2;
+        float g1 = -1.0f, g2 = -1.0f;   // cached filter coefficients
         float last = 0;
         bool active = false;
         juce::uint32 age = 0;

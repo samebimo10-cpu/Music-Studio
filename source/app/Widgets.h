@@ -4,11 +4,13 @@
 #include "core/dsp/Effect.h"
 #include "core/engine/MixGraph.h"
 
+namespace studio { class AudioEngine; }
+
 namespace studio::ui
 {
 
 /** Peak/RMS meter with peak hold. Reads values through a callback so it survives graph rebuilds. */
-class LevelMeter : public juce::Component, private juce::Timer
+class LevelMeter : public juce::Component, public juce::SettableTooltipClient, private juce::Timer
 {
 public:
     LevelMeter (bool vertical = true);
@@ -20,13 +22,13 @@ public:
 private:
     void timerCallback() override;
     bool vertical, showScale = false;
-    float levels[2] {}, holds[2] {}, gr = 0;
+    float levels[2] { -70.0f, -70.0f }, holds[2] { -70.0f, -70.0f }, gr = 0;
     int holdTimers[2] {};
 };
 
 /** Reads a track or master meter from the engine's current graph. */
-std::function<std::array<float, 3>()> trackMeterSource (class AudioEngine& engine, const juce::String& trackId);
-std::function<std::array<float, 3>()> masterMeterSource (class AudioEngine& engine);
+std::function<std::array<float, 3>()> trackMeterSource (studio::AudioEngine& engine, const juce::String& trackId);
+std::function<std::array<float, 3>()> masterMeterSource (studio::AudioEngine& engine);
 
 /** A labelled rotary knob. */
 class Knob : public juce::Component

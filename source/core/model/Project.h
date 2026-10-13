@@ -179,6 +179,7 @@ struct Track
     GeneratorInfo generator;
 
     Clip* findClip (const juce::String& clipId);
+    const Clip* findClip (const juce::String& clipId) const { return const_cast<Track*> (this)->findClip (clipId); }
     AutomationLane& automationFor (const juce::String& parameter);
 };
 
@@ -322,6 +323,7 @@ struct Project
     std::vector<const Track*> buses() const;
 
     Section* findSection (const juce::String& sectionId);
+    const Section* findSection (const juce::String& sectionId) const { return const_cast<Project*> (this)->findSection (sectionId); }
     const Section* sectionAt (double beat) const;
     Key keyAt (double beat) const;
     juce::String chordAt (double beat) const;

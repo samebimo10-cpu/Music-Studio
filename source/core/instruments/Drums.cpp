@@ -90,6 +90,8 @@ float DrumKit::renderVoice (Voice& v, double dt) noexcept
     auto env = [] (double time, double decay) { return (float) std::exp (-time / juce::jmax (0.001, decay)); };
     auto osc = [&] (int i, double f) { v.phases[(size_t) i] += f * dt; if (v.phases[(size_t) i] > 1) v.phases[(size_t) i] -= 1; return (float) std::sin (twoPi * v.phases[(size_t) i]); };
     float bp = 0, hp = 0;
+    // Filter cutoffs are fixed for a hit: compute each coefficient once.
+    auto cachedG = [dt] (float& slot, double fc) { if (slot < 0) slot = svfG (fc, 1.0 / dt); return slot; };
 
     switch (p.type)
     {
@@ -103,13 +105,13 @@ float DrumKit::renderVoice (Voice& v, double dt) noexcept
             {
                 // Hollow, woody: add a soft 2nd and a filtered triangle-ish 3rd.
                 body = 0.75f * body + 0.25f * osc (1, f * 2.0) + 0.12f * osc (2, f * 3.0);
-                body = v.f1.process (body, svfG (800.0 + 2500.0 * bright, 1.0 / dt), 1.2f, bp, hp);
+                body = v.f1.process (body, cachedG (v.g1, 800.0 + 2500.0 * bright), 1.2f, bp, hp);
             }
             s = std::tanh (body * p.drive) * env (t, p.decay);
             if (p.type == DrumPiece::Type::Tom)
                 s += 0.15f * p.noise * noise() * env (t, 0.03);
             // Beater click.
-            const float click = v.f2.process (noise(), svfG (3000.0 + 5000.0 * bright, 1.0 / dt), 1.0f, bp, hp);
+            const float click = v.f2.process (noise(), cachedG (v.g2, 3000.0 + 5000.0 * bright), 1.0f, bp, hp);
             s += hp * p.tone * 0.6f * env (t, 0.004);
             juce::ignoreUnused (click);
             break;
@@ -118,7 +120,7 @@ float DrumKit::renderVoice (Voice& v, double dt) noexcept
         {
             const double f = v.freq * std::pow (2.0, p.pitchDrop * std::exp (-t / p.pitchDecay) / 12.0);
             const float body = (osc (0, f) + 0.5f * osc (1, f * 1.59)) * env (t, 0.06 + 0.1 * p.tone);
-            v.f1.process (noise(), svfG (1800.0 + 5000.0 * bright, 1.0 / dt), 0.8f, bp, hp);
+            v.f1.process (noise(), cachedG (v.g1, 1800.0 + 5000.0 * bright), 0.8f, bp, hp);
             const float wires = (bp * 0.6f + hp * 0.6f) * env (t, p.decay);
             s = std::tanh ((body * p.tone + wires * p.noise * 2.0f) * p.drive);
             break;
@@ -136,7 +138,7 @@ float DrumKit::renderVoice (Voice& v, double dt) noexcept
                 metal += v.phases[(size_t) i] < 0.5 ? 1.0f : -1.0f;
             }
             const float mix = metal * 0.12f * (1.0f - p.noise) + noise() * p.noise;
-            v.f1.process (mix, svfG (6000.0 + 5000.0 * bright, 1.0 / dt), 0.7f, bp, hp);
+            v.f1.process (mix, cachedG (v.g1, 6000.0 + 5000.0 * bright), 0.7f, bp, hp);
             s = hp * env (t, p.decay) * (p.type == DrumPiece::Type::Cymbal ? 0.8f : 1.0f);
             break;
         }
@@ -150,14 +152,14 @@ float DrumKit::renderVoice (Voice& v, double dt) noexcept
                 if (tk >= 0) e = std::max (e, (float) std::exp (-tk / 0.006));
             }
             e = std::max (e, 0.5f * env (std::max (0.0, t - 0.03), p.decay));
-            v.f1.process (noise(), svfG (1100.0 + 1200.0 * bright, 1.0 / dt), 0.6f, bp, hp);
+            v.f1.process (noise(), cachedG (v.g1, 1100.0 + 1200.0 * bright), 0.6f, bp, hp);
             s = bp * e * 2.2f;
             break;
         }
         case DrumPiece::Type::Rim:
         {
             s = (osc (0, v.freq) * 0.8f + osc (1, v.freq * 2.3)) * env (t, 0.02);
-            v.f1.process (noise(), svfG (3000.0, 1.0 / dt), 0.5f, bp, hp);
+            v.f1.process (noise(), cachedG (v.g1, 3000.0), 0.5f, bp, hp);
             s += bp * env (t, 0.006) * 1.5f;
             break;
         }
@@ -172,7 +174,7 @@ float DrumKit::renderVoice (Voice& v, double dt) noexcept
                 const float g = (float) std::pow (std::abs (std::sin (dsp::pi * t * grainRate + v.phases[3])), 8.0);
                 e *= 0.4f + 0.9f * g;
             }
-            v.f1.process (noise(), svfG (p.freq, 1.0 / dt), 0.9f, bp, hp);
+            v.f1.process (noise(), cachedG (v.g1, p.freq), 0.9f, bp, hp);
             s = (bp * 0.8f + hp * 0.5f * bright) * e * 1.5f;
             break;
         }
@@ -182,7 +184,7 @@ float DrumKit::renderVoice (Voice& v, double dt) noexcept
             // gives the talking drum's rising squeeze), plus a slap of noise.
             const double f = v.freq * std::pow (2.0, p.pitchDrop * std::exp (-t / p.pitchDecay) / 12.0);
             const float body = osc (0, f) * env (t, p.decay) + 0.35f * osc (1, f * 1.59) * env (t, p.decay * 0.5);
-            v.f1.process (noise(), svfG (1500.0 + 4000.0 * bright, 1.0 / dt), 0.7f, bp, hp);
+            v.f1.process (noise(), cachedG (v.g1, 1500.0 + 4000.0 * bright), 0.7f, bp, hp);
             s = std::tanh (body * p.drive) * p.tone + bp * p.noise * env (t, 0.015) * 2.0f;
             break;
         }

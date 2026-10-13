@@ -107,6 +107,7 @@ Knob::Knob (const juce::String& text, double min, double max, double value, cons
     slider.setRange (min, max);
     slider.setValue (value, juce::dontSendNotification);
     slider.setTextValueSuffix (suffix);
+    slider.setNumDecimalPlacesToDisplay (max - min > 20 ? 0 : 2);
     label.setText (text, juce::dontSendNotification);
     label.setJustificationType (juce::Justification::centred);
     styleCaption (label);

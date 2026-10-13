@@ -109,6 +109,11 @@ private:
         Env amp, filt;
         std::array<double, 8> phases {};       // oscillator / unison phases
         double fmPhase = 0, vibPhase = 0, time = 0;
+        int controlCountdown = 0;
+        double cachedFreq = 440;
+        float cachedG = 0.5f;
+        bool filterOpen = false;
+        std::array<float, 3> formantG { 0.05f, 0.08f, 0.2f };
         float svfLow = 0, svfBand = 0, svfLow2 = 0, svfBand2 = 0;
         float pan = 0;
         // Modal partials as rotating phasors

@@ -4,6 +4,8 @@
 #include "core/instruments/InstrumentLibrary.h"
 #include "core/model/TempoMap.h"
 #include "core/mixing/MixTools.h"
+#include "core/dsp/TimeStretch.h"
+#include "core/engine/ClipCache.h"
 
 namespace studio::ui
 {
@@ -773,7 +775,7 @@ public:
         m.addItem (2, "Duplicate (Ctrl+D)");
         m.addItem (3, "Delete");
         m.addSeparator();
-        auto* c = session.project().findTrack (trackId)->findClip (clipId);
+        auto* c = const_cast<Project&> (session.project()).findTrack (trackId)->findClip (clipId);
         if (c != nullptr && ! c->isMidi)
         {
             m.addItem (10, "Time-stretch to song tempo...");

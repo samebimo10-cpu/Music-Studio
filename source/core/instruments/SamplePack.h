@@ -117,7 +117,7 @@ private:
 };
 
 /** Finds, installs, downloads and loads sample packs. The packs folder can live
-    on an external drive (Settings -> Storage). */
+    on an external drive (Library -> Packs -> Packs folder). */
 class SamplePackManager
 {
 public:

@@ -96,6 +96,8 @@ void NoiseReductionEffect::prepareSpectral()
         noise[(size_t) ch].assign (numBins, 1.0e-9f);
         gainSmooth[(size_t) ch].assign (numBins, 1.0f);
         minTrack[(size_t) ch].assign (numBins, 1.0e9f);
+        prevPost[(size_t) ch].assign (numBins, 1.0f);
+        smoothPower[(size_t) ch].assign (numBins, 0.0f);
     }
     if (fixedProfile.size() != (size_t) numBins)
         fixedProfile.assign (numBins, 1.0e-9f);
@@ -184,11 +186,14 @@ void NoiseReductionEffect::processFrame (int ch, float* spec) noexcept
         else if (adapt)
         {
             // Minimum tracking with slow rise, so speech does not lift the estimate.
-            mt[(size_t) k] = power < mt[(size_t) k] ? 0.7f * mt[(size_t) k] + 0.3f * power : mt[(size_t) k] * 1.002f + 1.0e-12f;
+            // Track the minimum of the *smoothed* power (raw frames dip far below the mean).
+            auto& sp = smoothPower[(size_t) ch][(size_t) k];
+            sp = 0.85f * sp + 0.15f * power;
+            mt[(size_t) k] = sp < mt[(size_t) k] ? sp : mt[(size_t) k] * 1.002f + 1.0e-12f;
             float target = mt[(size_t) k] * 1.5f;
             // With a learned/room-check profile, only follow the noise down, or up by 3 dB at most:
             // sustained sung notes must never be mistaken for noise.
-            if (haveProfile) target = std::min (target, fixedProfile[(size_t) k] * 2.0f);
+            if (haveProfile) target = juce::jlimit (fixedProfile[(size_t) k] * 0.7f, fixedProfile[(size_t) k] * 2.0f, target);
             n[(size_t) k] = 0.98f * n[(size_t) k] + 0.02f * target;
         }
     }
@@ -196,15 +201,19 @@ void NoiseReductionEffect::processFrame (int ch, float* spec) noexcept
     if (learning)
         return; // pass audio through untouched while learning
 
-    // Spectral gain with temporal smoothing (fast attack, slower release to avoid warble).
+    // Decision-directed Wiener gain (Ephraim-Malah): the a-priori SNR is smoothed
+    // over time, so random noise peaks are not let through ("musical noise") while
+    // real voice onsets open the gain immediately.
+    auto& pp = prevPost[(size_t) ch];
     for (int k = 0; k < numBins; ++k)
     {
         const float re = spec[2 * k], im = spec[2 * k + 1];
         const float power = re * re + im * im + 1.0e-12f;
-        float target = 1.0f - over * n[(size_t) k] / power;
-        target = juce::jlimit (floorGain, 1.0f, target);
+        const float post = power / (over * n[(size_t) k] + 1.0e-12f);
         auto& gs = g[(size_t) k];
-        gs = target > gs ? 0.5f * gs + 0.5f * target : 0.8f * gs + 0.2f * target;
+        const float prior = 0.92f * gs * gs * pp[(size_t) k] + 0.08f * std::max (post - 1.0f, 0.0f);
+        pp[(size_t) k] = post;
+        gs = juce::jlimit (floorGain, 1.0f, prior / (1.0f + prior));
     }
 
     // Light smoothing across frequency.

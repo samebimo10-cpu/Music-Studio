@@ -107,6 +107,7 @@ void SynthInstrument::startVoice (Voice& v, int note, float velocity)
         return; // keep envelopes running, just glide
 
     v.time = 0;
+    v.controlCountdown = 0;
     v.amp.set (patch.ampEnv, sr);
     v.filt.set (patch.filterEnv, sr);
     v.amp.value = 0;
@@ -266,18 +267,38 @@ float SynthInstrument::renderVoice (Voice& v, float& outR) noexcept
     const float ampEnv = v.amp.next();
     const float filtEnv = v.filt.next();
 
-    // Pitch: glide, bend, pitch envelope, delayed vibrato.
-    if (patch.glide > 0)
-        v.freq += (v.targetFreq - v.freq) * (1.0 - std::exp (-1.0 / (patch.glide * sr)));
-    double semis = bend + patch.pitchEnvSemis * std::exp (-v.time / juce::jmax (0.001f, patch.pitchEnvDecay));
-    if (patch.vibratoDepth > 0)
+    // Pitch (glide, bend, pitch envelope, delayed vibrato) and the filter cutoff are
+    // computed at control rate - every 16 samples - which is inaudible but much cheaper.
+    if (--v.controlCountdown <= 0)
     {
-        const double fade = juce::jlimit (0.0, 1.0, (v.time - patch.vibratoDelay) / 0.4);
-        semis += patch.vibratoDepth * fade * std::sin (twoPi * v.vibPhase);
-        v.vibPhase += patch.vibratoRate / sr;
-        if (v.vibPhase >= 1) v.vibPhase -= 1;
+        v.controlCountdown = 16;
+        const double step = 16.0 / sr;
+        if (patch.glide > 0)
+            v.freq += (v.targetFreq - v.freq) * (1.0 - std::exp (-16.0 / (patch.glide * sr)));
+        double semis = bend + patch.pitchEnvSemis * std::exp (-v.time / juce::jmax (0.001f, patch.pitchEnvDecay));
+        if (patch.vibratoDepth > 0)
+        {
+            const double fade = juce::jlimit (0.0, 1.0, (v.time - patch.vibratoDelay) / 0.4);
+            semis += patch.vibratoDepth * fade * std::sin (twoPi * v.vibPhase);
+            v.vibPhase += patch.vibratoRate * step;
+            if (v.vibPhase >= 1) v.vibPhase -= 1;
+        }
+        v.cachedFreq = v.freq * std::pow (2.0, semis / 12.0);
+
+        double fc = patch.cutoff * std::pow (2.0, patch.filterEnvAmount * filtEnv * 5.0)
+                  * std::pow (v.cachedFreq / 261.6, patch.keyTrack) * (1.0 - patch.velToCutoff + patch.velToCutoff * v.velocity * 1.5);
+        fc = juce::jlimit (30.0, sr * 0.45, fc);
+        v.filterOpen = fc >= sr * 0.44;
+        v.cachedG = (float) std::tan (dsp::pi * fc / sr);
+
+        if (patch.mode == SynthPatch::Mode::Formant)
+        {
+            const float vw = juce::jlimit (0.0f, 1.0f, patch.vowel);
+            const float formants[3] { 800 + (350 - 800) * vw, 1150 + (600 - 1150) * vw, 2900 + (2700 - 2900) * vw };
+            for (int i = 0; i < 3; ++i) v.formantG[(size_t) i] = (float) std::tan (dsp::pi * formants[i] / sr);
+        }
     }
-    const double f = v.freq * std::pow (2.0, semis / 12.0);
+    const double f = v.cachedFreq;
     v.time += 1.0 / sr;
 
     float s = 0;
@@ -389,12 +410,9 @@ float SynthInstrument::renderVoice (Voice& v, float& outR) noexcept
     // Filter: TPT state-variable low-pass (two cascaded for 24 dB on subtractive).
     if (patch.mode == SynthPatch::Mode::Subtractive || patch.mode == SynthPatch::Mode::Pluck || patch.mode == SynthPatch::Mode::FM)
     {
-        double fc = patch.cutoff * std::pow (2.0, patch.filterEnvAmount * filtEnv * 5.0)
-                  * std::pow (f / 261.6, patch.keyTrack) * (1.0 - patch.velToCutoff + patch.velToCutoff * v.velocity * 1.5);
-        fc = juce::jlimit (30.0, sr * 0.45, fc);
-        if (fc < sr * 0.44)
+        if (! v.filterOpen)
         {
-            const float g = (float) std::tan (dsp::pi * fc / sr);
+            const float g = v.cachedG;
             const float k = 2.0f - 1.9f * patch.resonance;
             const float a1 = 1.0f / (1.0f + g * (g + k));
             auto stage = [&] (float x, float& low, float& band)
@@ -415,12 +433,11 @@ float SynthInstrument::renderVoice (Voice& v, float& outR) noexcept
     {
         // Three formant band-passes, morphing from "ah" to "oo".
         const float vw = juce::jlimit (0.0f, 1.0f, patch.vowel);
-        const float formants[3] { 800 + (350 - 800) * vw, 1150 + (600 - 1150) * vw, 2900 + (2700 - 2900) * vw };
         const float gains[3] { 1.0f, 0.5f + (0.25f - 0.5f) * vw, 0.25f };
         float out = 0;
         for (int i = 0; i < 3; ++i)
         {
-            const float g = (float) std::tan (dsp::pi * formants[i] / sr);
+            const float g = v.formantG[(size_t) i];
             const float k = 1.0f / 6.0f;
             const float a1 = 1.0f / (1.0f + g * (g + k));
             float& low = v.formantState[(size_t) (i * 2)];

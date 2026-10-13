@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libfreetype-dev libfontconfig1-dev libx11-dev libxrandr-dev \
+            libxinerama-dev libxcursor-dev libxext-dev libgl-dev libcurl4-openssl-dev libsqlite3-dev ffmpeg xvfb
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Unit tests
+        shell: bash
+        run: |
+          exe=$(find build/tests -type f \( -name 'studio-tests' -o -name 'studio-tests.exe' -o -name 'studio_tests' -o -name 'studio_tests.exe' \) -perm -u+x | head -1)
+          [ -z "$exe" ] && exe=$(find build/tests -name 'studio*tests*.exe' | head -1)
+          "$exe"
+
+      - name: End-to-end (generate, render, export, checklist)
+        if: runner.os == 'Linux'
+        run: |
+          cli=$(find build/source/cli -type f -name 'studio*cli*' -perm -u+x | head -1)
+          cd "$RUNNER_TEMP"
+          "$cli" new Demo.studio --template "Worship single" --name Demo
+          "$cli" beat Demo.studio --style afrobeats --length 60 --seed 1
+          "$cli" render Demo.studio demo.wav
+          "$cli" export Demo.studio --out out
+          "$cli" analyse out/Demo.wav
+
+      - name: UI screenshots
+        if: runner.os == 'Linux'
+        run: |
+          app=$(find build/source/app -type f -name 'Studio' -perm -u+x | head -1)
+          xvfb-run -s "-screen 0 1600x1000x24" "$app" --screenshot screenshots
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: screenshots
+          path: screenshots

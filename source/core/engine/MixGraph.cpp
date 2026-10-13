@@ -534,14 +534,23 @@ void MixGraph::process (juce::AudioBuffer<float>& output, juce::int64 pos, int n
             }
         }
 
-        if (n.vocalChain != nullptr)
-            n.vocalChain->process (view, nullptr);
-        for (auto& e : n.effects)
+        // Skip the effect chain once a track has been silent for longer than any tail
+        // (10 s covers long reverbs and the spectral effects' latency). Saves a lot of CPU
+        // on empty vocal tracks with full vocal chains.
+        const bool inputSilent = n.buffer.getMagnitude (0, num) < 1.0e-7f && n.buffer.getMagnitude (1, num) < 1.0e-7f;
+        n.silentSamples = inputSilent ? juce::jmin (n.silentSamples + num, std::numeric_limits<int>::max() / 2) : 0;
+        const bool runEffects = n.silentSamples < (int) (10.0 * options.sampleRate) + n.ownLatency;
+        if (runEffects)
         {
-            if (e.effect->bypassed()) continue;
-            const juce::AudioBuffer<float>* sc = nullptr;
-            if (e.sidechainTrack >= 0) sc = &nodes[(size_t) e.sidechainTrack]->preFader;
-            e.effect->process (view, sc);
+            if (n.vocalChain != nullptr)
+                n.vocalChain->process (view, nullptr);
+            for (auto& e : n.effects)
+            {
+                if (e.effect->bypassed()) continue;
+                const juce::AudioBuffer<float>* sc = nullptr;
+                if (e.sidechainTrack >= 0) sc = &nodes[(size_t) e.sidechainTrack]->preFader;
+                e.effect->process (view, sc);
+            }
         }
 
         for (int ch = 0; ch < 2; ++ch)
@@ -590,6 +599,7 @@ void MixGraph::process (juce::AudioBuffer<float>& output, juce::int64 pos, int n
     masterMeters.update (masterView, num);
     if (mastering != nullptr)
         masterMeters.gainReductionDb.store (mastering->getGainReductionDb(), std::memory_order_relaxed);
+    if (loudnessResetPending.exchange (false)) loudness.reset();
     loudness.process (masterView);
 
     for (int ch = 0; ch < juce::jmin (2, output.getNumChannels()); ++ch)

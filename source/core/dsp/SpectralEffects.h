@@ -66,7 +66,7 @@ protected:
 
 private:
     enum { amount, sensitivity, learn, hum, adaptive };
-    std::array<std::vector<float>, 2> noise, gainSmooth, minTrack;
+    std::array<std::vector<float>, 2> noise, gainSmooth, minTrack, prevPost, smoothPower;
     std::vector<float> fixedProfile;
     std::atomic<bool> hasFixedProfile { false };
     std::array<std::array<Biquad, 8>, 2> humNotches;

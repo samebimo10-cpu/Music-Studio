@@ -251,7 +251,7 @@ std::vector<MixIssue> assistMix (const Project& p, const juce::AudioBuffer<float
     const TrackAnalysis* kick = nullptr;
     for (auto& t : tracks)
     {
-        if (t.role == TrackRole::LeadVocal && vocal == nullptr) vocal = &t;
+        if (t.role == TrackRole::LeadVocal && vocal == nullptr && t.activeRmsDb > -60.0f) vocal = &t; // only a vocal that has audio
         if (t.role == TrackRole::Bass && bass == nullptr) bass = &t;
         if ((t.role == TrackRole::Kick || t.role == TrackRole::Drums) && kick == nullptr) kick = &t;
     }
