@@ -1,0 +1,5 @@
+juce_add_console_app(studio_tests PRODUCT_NAME "studio-tests")
+file(GLOB STUDIO_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+target_sources(studio_tests PRIVATE ${STUDIO_TEST_SOURCES})
+target_link_libraries(studio_tests PRIVATE studio_core)
+add_test(NAME studio_tests COMMAND studio_tests)
